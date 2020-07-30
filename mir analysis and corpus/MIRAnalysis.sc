@@ -208,6 +208,9 @@ MIRAnalysisLiveFrame {
 
 MIRAnalysis {
 	classvar <fftSize = 2048, <>maxNChans = 8, <>maxHistory = 6;
+	classvar buf1size = 14;
+	classvar buf2size = 52;
+	classvar buf3size = 40;
 	var <liveInBus, nChans = 1, synth, <>maxHistory = 6, replyID,action, normalizedRanges, normalizedRangesForSynth, playing, vectorHistory, currentData, <trigRate, maxHistory_seconds = 1;
 
 	*initClass {
@@ -222,16 +225,20 @@ MIRAnalysis {
 
 	*featureOrder {
 		^[
-			\amplitude,
-			\fftCrest,
-			\fftSlope,
-			\fftSpread,
-			\loudness,
-			\sensoryDissonance,
-			\specCentroid,
+			\specCent,
+			\specSpread,
+			\specSkewness,
+			\specKurtosis,
+			\specRolloff,
 			\specFlatness,
-			\specPcile,
+			\specCrest,
+			\pitch,
+			\pitchConfidence,
+			\loudness,
+			\truePeak,
+			\senseDis,
 			\zeroCrossing,
+			\mfcc00,
 			\mfcc01,
 			\mfcc02,
 			\mfcc03,
@@ -244,7 +251,85 @@ MIRAnalysis {
 			\mfcc10,
 			\mfcc11,
 			\mfcc12,
-			\mfcc13
+			\mfcc13,
+			\mfcc14,
+			\mfcc15,
+			\mfcc16,
+			\mfcc17,
+			\mfcc18,
+			\mfcc19,
+			\mfcc20,
+			\mfcc21,
+			\mfcc22,
+			\mfcc23,
+			\mfcc24,
+			\mfcc25,
+			\mfcc26,
+			\mfcc27,
+			\mfcc28,
+			\mfcc29,
+			\mfcc30,
+			\mfcc31,
+			\mfcc32,
+			\mfcc33,
+			\mfcc34,
+			\mfcc35,
+			\mfcc36,
+			\mfcc37,
+			\mfcc38,
+			\mfcc39,
+			\chromagram00,
+			\chromagram01,
+			\chromagram02,
+			\chromagram03,
+			\chromagram04,
+			\chromagram05,
+			\chromagram06,
+			\chromagram07,
+			\chromagram08,
+			\chromagram09,
+			\chromagram10,
+			\chromagram11,
+			\melband00,
+			\melband01,
+			\melband02,
+			\melband03,
+			\melband04,
+			\melband05,
+			\melband06,
+			\melband07,
+			\melband08,
+			\melband09,
+			\melband10,
+			\melband11,
+			\melband12,
+			\melband13,
+			\melband14,
+			\melband15,
+			\melband16,
+			\melband17,
+			\melband18,
+			\melband19,
+			\melband20,
+			\melband21,
+			\melband22,
+			\melband23,
+			\melband24,
+			\melband25,
+			\melband26,
+			\melband27,
+			\melband28,
+			\melband29,
+			\melband30,
+			\melband31,
+			\melband32,
+			\melband33,
+			\melband34,
+			\melband35,
+			\melband36,
+			\melband37,
+			\melband38,
+			\melband39
 		];
 	}
 
@@ -255,12 +340,12 @@ MIRAnalysis {
 			(1..maxChans).do({
 				arg nChans;
 				SynthDef(\mir++mode.asSymbol++nChans.asSymbol,{
-					arg soundBuf, dataBuf, fftDur, trigRate = 30, inBus, replyID,onsetThresh = 0.9,onsetRelaxTime = 0.1, autoRange = 0, lag = 0;
-					var sig,fft,trig,specCent,features, normedFeatures, norms, onsetTrigs;
+					arg soundBuf, dataBuf, dataBuf2, dataBuf3, trigRate = 30, inBus, replyID,onsetThresh = 0.9,onsetRelaxTime = 0.1, autoRange = 0, lag = 0;
+					var sig,fft,trig,specCent,features, normedFeatures, norms, onsetTrigs, mfcc_chroma, melbands;
 
 					if(mode == \Nrt,{
 						sig = Mix(PlayBuf.ar(nChans,soundBuf,BufRateScale.ir(soundBuf),doneAction:2));
-						trig = DelayN.kr(Impulse.kr(fftDur.reciprocal),fftDur,fftDur);
+						trig = DelayN.kr(Impulse.kr(trigRate),trigRate.reciprocal,trigRate.reciprocal);
 					},{
 						sig = Mix(In.ar(inBus,nChans));
 						trig = DelayN.kr(Impulse.kr(trigRate),trigRate.reciprocal,trigRate.reciprocal)
@@ -269,46 +354,34 @@ MIRAnalysis {
 					//sig.postln;
 
 					fft = FFT(LocalBuf(fftSize),sig);
-					specCent = SpecCentroid.kr(fft);
 
-					features = [
-						Amplitude.kr(sig),
-						FFTCrest.kr(fft),
-						FFTSlope.kr(fft),
-						FFTSpread.kr(fft,specCent),
-						Loudness.kr(fft),
+					features = FluidSpectralShape.kr(sig) ++
+					FluidPitch.kr(sig) ++
+					FluidLoudness.kr(sig) ++
+					[
 						SensoryDissonance.kr(fft),
-						specCent,
-						SpecFlatness.kr(fft),
-						SpecPcile.kr(fft,0.9),
 						A2K.kr(ZeroCrossing.ar(sig))
-					] ++ MFCC.kr(fft); // 23 features
+					]; // 13
+
+					mfcc_chroma = FluidMFCC.kr(sig,40) ++
+					Chromagram.kr(fft,fftSize);
+
+					melbands = FluidMelBands.kr(sig,40,maxNumBands:40);
 
 					features = Sanitize.kr(features);
+
+					//features = Median.kr(15,features); // about 25 ms
 
 					onsetTrigs = Onsets.kr(fft,onsetThresh,relaxtime:onsetRelaxTime);
 
 					if(mode == \Nrt,{
 						features = features.lag(lag);
-						onsetTrigs = Trig1.kr(onsetTrigs,fftDur);
+						onsetTrigs = Trig1.kr(onsetTrigs,trigRate.reciprocal);
 						Logger.kr(features ++ [onsetTrigs],trig,dataBuf);
+						Logger.kr(mfcc_chroma,trig,dataBuf2);
+						Logger.kr(melbands,trig,dataBuf3);
 					},{
-						norms = \norms.kr(0.dup(this.nFeatures * 2));
-
-						normedFeatures = features.collect({
-							arg feature, index;
-							feature.linlin(norms[index * 2], norms[(index * 2) + 1],0,1);
-						});
-
-						normedFeatures = Select.kr(autoRange,[
-							normedFeatures,
-							normedFeatures.collect({
-								arg feature;
-								AutoRange.kr(feature);
-							})
-						]);
-
-						features = features ++ normedFeatures;
+						features = features ++ mfcc_chroma ++ melbands;
 
 						features = features.lag(lag);
 
@@ -360,7 +433,7 @@ MIRAnalysis {
 	}
 
 	init {
-		arg liveInBus_, target_,addAction_,normalizedRanges_,nChans_ = 1, onsetThresh, onsetRelaxTime, autoRange_, lag_, action_, liveTrigRate = 30;
+		arg liveInBus_, target_,addAction_,normalizedRanges_,nChans_ = 1, onsetThresh, onsetRelaxTime, autoRange_, lag_, action_, trigRate_ = 30;
 		liveInBus = liveInBus_;
 		nChans = nChans_;
 		replyID = UniqueID.next;
@@ -368,7 +441,7 @@ MIRAnalysis {
 		normalizedRanges = normalizedRanges_;
 		playing = true;
 		vectorHistory = [];
-		trigRate = liveTrigRate;
+		trigRate = trigRate_;
 
 		maxHistory = trigRate * maxHistory_seconds;
 
@@ -432,7 +505,7 @@ MIRAnalysis {
 					vectorHistory.removeAt(maxHistory)
 				});
 
-				malf.dispersionIndex_(MIRAnalysis.getDispersionIndex(vectorHistory));
+				//malf.dispersionIndex_(MIRAnalysis.getDispersionIndex(vectorHistory));
 
 				currentData = malf;
 				action.value(malf,this);
@@ -466,41 +539,6 @@ MIRAnalysis {
 			//hist.postln;
 			^hist;
 		});
-	}
-
-	*getDispersionIndex {
-		arg malfs; // expects array of frames;
-		var means, variances, dispersion;
-		var frames = malfs.collect({
-			arg malf;
-			malf.vector;
-		});
-		//"disp frames: %".format(frames).postln;
-		means = frames.mean;
-		//"means:      %".format(means).postln;
-		variances = frames.flop.collect({
-			arg paramVector, index;
-			(paramVector - means[index]).pow(2).sum / frames.size;
-		});
-
-		//"variances:   %".format(variances).postln;
-		dispersion = variances / means;
-
-		dispersion = dispersion.collect({
-			arg dis;
-			if(dis.isNaN,{dis = 0});
-			dis;
-		});
-
-		//"dispersion 1: %".format(dispersion).postln;
-
-		dispersion = dispersion.mean / 400000; // this is a rough normalization figure, found by testing a few options
-
-		//"dispersion 2: %".format(dispersion).postln;
-
-		if(dispersion.isNaN,{dispersion = 0});
-		//"disp inside class method: %".format(dispersion).postln;
-		^dispersion;
 	}
 
 	*normalizeRangesForSynth {
@@ -551,22 +589,6 @@ MIRAnalysis {
 			trackingDict = Dictionary.new;
 		});
 
-		/*pn = PathName(folderPath);
-
-		if(recursive,{
-		pn.folders.do({
-		arg pnsubfolder;
-		this.analyzeFolderNRT(
-		pnsubfolder.fullPath,
-		action,
-		true,
-		featureSmoothingLagOnServer,
-		finishedAction,
-		trackingDict
-		);
-		});
-		});*/
-
 		files.do({
 			arg pnfile;
 			this.analyzeFileNRT(
@@ -580,8 +602,8 @@ MIRAnalysis {
 	}
 
 	*analyzeFileNRT {
-		arg filePath, action,featureSmoothingLagOnServer = 0, finishedAction, trackingDict, onsetThresh = 0.9, onsetRelaxTime = 0.1;
-		var analysisfilename, ext;
+		arg filePath, action,featureSmoothingLagOnServer = 0, finishedAction, trackingDict, onsetThresh = 0.9, onsetRelaxTime = 0.1, trigRate = 30;
+		var analysisfilename,analysisfilename2,analysisfilename3, ext;
 
 		ext = PathName(filePath).extension;
 		if((ext == "wav") || (ext == "aiff") || (ext == "aif"),{
@@ -590,27 +612,36 @@ MIRAnalysis {
 				trackingDict.put(filePath,false);
 			});
 
-			analysisfilename = "/tmp/%_nrt_analysis_buf_%.wav".format(Date.myFormat,UniqueID.next);
+			analysisfilename = "/tmp/%_nrt_analysis_buf_%.wav".format(Date.localtime.stamp,UniqueID.next);
+			analysisfilename2 = "/tmp/%_nrt_analysis_buf_%.wav".format(Date.localtime.stamp,UniqueID.next);
+			analysisfilename3 = "/tmp/%_nrt_analysis_buf_%.wav".format(Date.localtime.stamp,UniqueID.next);
 			SoundFile.use(filePath,{
 				arg sf;
-				var fileDur,nChans,oscActions,fftDur;
+				var fileDur,nChans,oscActions;
 				fileDur = sf.duration;
 				nChans = sf.numChannels;
-				fftDur = fftSize / sf.sampleRate;
+				//fftDur = fftSize / sf.sampleRate;
 
 				oscActions = [
-					[0.0,[\b_alloc,0,fileDur / fftDur,this.nFeatures + 1]], // bufnum, frames, chans (+ 1 is for the onsets channel, which gets stripped off afterwards)
+					[0.0,[\b_alloc,0,fileDur / trigRate.reciprocal,buf1size]], // bufnum, frames, chans (+1 is for the onsets channel, which gets stripped off afterwards)
+					[0.0,[\b_alloc,2,fileDur / trigRate.reciprocal,buf2size]],
+					[0.0,[\b_alloc,3,fileDur / trigRate.reciprocal,buf3size]],
 					[0.0,[\b_allocRead,1,filePath]],
 					// wait a little time
 					[0,[\s_new, \mirNrt++nChans.asSymbol, 1000, 0, 0, // name, id, addAction, addTarget
 						\soundBuf,1, // start args
 						\dataBuf,0,
-						\fftDur,fftDur,
+						\dataBuf2,2,
+						\dataBuf3,3,
+						//\fftDur,fftDur,
 						\lag,featureSmoothingLagOnServer,
 						\onsetThresh,onsetThresh,
-						\onsetRelaxTime,onsetRelaxTime
+						\onsetRelaxTime,onsetRelaxTime,
+						\trigRate,trigRate
 					]],
 					[fileDur,[\b_write,0,analysisfilename, "WAV", "float"]],
+					[fileDur,[\b_write,2,analysisfilename2, "WAV", "float"]],
+					[fileDur,[\b_write,3,analysisfilename3, "WAV", "float"]],
 					[fileDur,[\c_set, 0, 0]]
 				];
 
@@ -625,93 +656,67 @@ MIRAnalysis {
 							var array, /*data = (),*/ dispersionData = [], onsetVector;
 							array = FloatArray.newClear(sf.numFrames * sf.numChannels);
 							sf.readData(array);
-							array = array.clump(this.nFeatures + 1); // + 1 for onsets channel
+							array = array.clump(buf1size); // + 1 for onsets channel
 							//"array size: %".format(array.size).postln;
 
 							// strip off onsets
 							onsetVector = array.flop.last;
 							//"onset vector: %".format(onsetVector).postln;
 
-							array = array.collect({
-								arg frame, index;
-								var time;//, nDispersionFrames;//, disp;
-								time = index * fftDur;
-								/*								time.postln;
-								frame.postln;
-								"".postln;*/
-								//"frame: %".format(frame).postln;
-								//nDispersionFrames = min(maxHistory-1,index);
+							SoundFile.use(analysisfilename2,{
+								arg sf_2;
+								var array2 = FloatArray.newClear(sf_2.numFrames * sf_2.numChannels);
+								sf_2.readData(array2);
 
-								//disp = MIRAnalysis.getDispersionIndex(array[(index-nDispersionFrames)..index]);
-								//"dispersion: %".format(disp).postln;
-								//dispersionData = dispersionData.add(disp);
+								array2 = array2.clump(buf2size);
 
-								[time,frame[0..(frame.size-2)]]; // -2 to strip off the last value (which was onset info)
-							});
+								//"array 2 shape: %".format(array2.shape).postln;
 
-							/*							data.frames = array;
-							data.fftSize = fftSize;
-							data.fftDur = fftDur;
-							data.path = filePath;
-							data.featureOrder = this.featureOrder;
-							data.dispersionIndexArray = dispersionData;
-							data.onsetVector = onsetVector;*/
-							action.value(MIRAnalysisFile(
-								array,
-								fftSize,
-								fftDur,
-								filePath,
-								nil,
-								nil,//dispersionData,
-								onsetVector,
-								fileDur
-							));
+								SoundFile.use(analysisfilename3,{
+									arg sf_3;
+									var array3 = FloatArray.newClear(sf_3.numFrames * sf_3.numChannels);
+									sf_3.readData(array3);
 
+									array3 = array3.clump(buf3size);
 
-							/*							if(trackingDict.notNil,{
-							trackingDict.put(filePath,true);
-							/*if(trackingDict.includes(false),{
-							// not finished yet:
-							var done = trackingDict.values.count({arg val; val});
-							var total = trackingDict.values.size;
-							var pct = ((done / total) * 100).round(0.1).asString.padLeft(5);
-							total = total.asString.padLeft(6);
-							done = done.asStringff.padLeft(6);
-							"% of % --- %\\% complete".format(done,total,pct).postln;
-							});*/
-							});*/
+									array = array.collect({
+										arg frame, index;
+										var time;//, nDispersionFrames;//, disp;
+										var vec = frame[0..(frame.size-2)] ++ array2[index] ++ array3[index];// -2 to strip off the last value (which was onset info)
+										time = index * trigRate.reciprocal;
 
-							//trackingDict.postln;
-							//"trackingDict.includes(false).not".postln;
-							//trackingDict.includes(false).not.postln;
-							if(trackingDict.notNil,{
-								trackingDict.put(filePath,true);
-								if(trackingDict.includes(false).not,{
-									// finished with all them!
-									finishedAction.value;
+										/*									time.postln;
+										frame.postln;
+										array2[index].postln;
+										vec.postln;
+										vec.size.postln;
+										"".postln;*/
+										[time,vec];
+									});
+
+									action.value(MIRAnalysisFile(
+										array,
+										fftSize,
+										trigRate.reciprocal,
+										filePath,
+										nil,
+										nil,//dispersionData,
+										onsetVector,
+										fileDur
+									));
+
+									if(trackingDict.notNil,{
+										trackingDict.put(filePath,true);
+										if(trackingDict.includes(false).not,{
+											// finished with all them!
+											finishedAction.value;
+										});
+									});
 								});
 							});
-
-							/*							array.dopostln;
-							"".postln;
-							array[0].postln;
-							array.size.postln;*/
 						});
-						/*buf = Buffer.read(server,analysisfilename);
-
-						buf.loadToFloatArray(action:{
-						arg floatArray;
-						//floatArray.size.postln;
-						floatArray = floatArray.clump(nFeatures);// clump to get each frame's vector
-						action.value(floatArray);
-						//~corpus = ~corpus.addAll(floatArray);
-						});*/
-				}); // synthesize
+				});
 			});
 		});
 	}
-
-	/*	*fftDur {
-	fftSize / 44100; // really hope you don't have to call this...! keep track a yo shit.
-	}*/
 }
