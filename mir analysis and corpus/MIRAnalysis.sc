@@ -11,130 +11,39 @@ Inspired by Nic Collins' SCMIR: https://composerprogrammer.com/code.html
 
 MIRAnalysisFile {
 	classvar <featureOrder;
-	var <frames,<fftSize,<fftDur,<path,<fft,<dispersionIndicies,<onsets, <duration, <>normalizedFrames = nil, <ranges = nil;
+	var <frames,<fftSize,<grain_dur,<path,<fft,<dispersionIndicies,<onsets, <duration, <nChannels;
 
 	*initClass {
 		featureOrder = MIRAnalysis.featureOrder;
 	}
 
 	*new {
-		arg frames,fftSize,fftDur,path,fft,dispersionIndicies,onsets,duration;
-		^super.newCopyArgs(frames,fftSize,fftDur,path,fft,dispersionIndicies,onsets,duration);
+		/*
+		array,
+		fftSize,
+		grain_dur,
+		filePath,
+		onsetVector,
+		fileDur
+		*/
+		arg frames,fftSize,grain_dur,path,onsets,duration,nChans;
+		^super.new.init(frames,fftSize,grain_dur,path,onsets,duration,nChans);
 	}
 
-	saveAsCSV {
-		arg path;
-		var file;
-		if(PathName(path).extension != "csv",{
-			path = path ++ ".csv";
-		});
-		file = File(path,"w");
-
-		file.write("nFrames,%\n".format(frames.size));
-		file.write("fftSize,%\n".format(fftSize));
-		file.write("fftDur,%\n".format(fftDur));
-		file.write("filePath,%\n".format(path));
-		//file.write("normalizationRanges,%\n".format(ranges));
-		file.write("frameIndex,frameTime_sec");
-
-		featureOrder.do({
-			arg feature;
-			file.write(",%".format(feature.asString));
-		});
-
-		file.write(",dispersionIndex,onsets");
-
-		if(normalizedFrames.notNil,{
-			//file.write(" ");
-			featureOrder.do({
-				arg feature;
-				file.write(",%_norm".format(feature.asString));
-			});
-		});
-
-		file.write("\n");
-
-		frames.do({
-			arg frame, frameNum;
-			file.write("%,%".format(frameNum,frame[0]));
-
-			frame[1].do({ // vector
-				arg val;
-				file.write(",%".format(val));
-			});
-
-			file.write(",%,%".format(
-				dispersionIndicies[frameNum],
-				onsets[frameNum]
-			));
-
-			if(normalizedFrames.notNil,{
-				normalizedFrames[frameNum][1].do({
-					arg val;
-					file.write(",%".format(val));
-				});
-			});
-
-			file.write("\n");
-		});
-
-		file.close;
-	}
-
-	plot {
-		frames.collect({
-			arg frame, i;
-			frame[1].copy.addAll([dispersionIndicies[i],onsets[i]]); // just the data vector;
-		}).flatten.plot("mir",Rect(0,0,400,800),numChannels:frames[0][1].size+2);
-	}
-
-	normalize {
-		# normalizedFrames, ranges = MIRAnalysisFile.normalize(frames);
-		^this;
-	}
-
-	*normalize {
-		arg frames;
-		var ranges, normalizedFrames;
-
-		ranges = Array.fill(frames[0][1].size,{ControlSpec(inf,-inf)}); // [0][1] is [first example][data vector]
-
-		frames.do({
-			arg line;
-			line[1].do({ // vector
-				arg val, i;
-				if(val > ranges[i].maxval,{
-					ranges[i].maxval = val;
-				});
-				if(val < ranges[i].minval,{
-					ranges[i].minval = val;
-				});
-			});
-		});
-
-		normalizedFrames = frames.collect({
-			arg line;
-			var newVector = line[1].collect({
-				arg val, i;
-				ranges[i].unmap(val);
-			});
-			[line[0],newVector];
-		});
-
-		^[normalizedFrames, ranges];
+	init {
+		arg frames_, fftSize_, grain_dur_, path_, onsets_, duration_,nChans_;
+		frames = frames_;
+		fftSize = fftSize_;
+		grain_dur = grain_dur_;
+		path = path_;
+		onsets = onsets_;
+		duration = duration_;
+		nChannels = nChans_;
 	}
 
 	getDefinedVectorFrames {
-		arg defVec, getNormalized = false;
+		arg defVec;
 		var sourceFrames, outFrames;
-		if(getNormalized,{
-			if(normalizedFrames.isNil,{
-				this.normalize;
-			});
-			sourceFrames = normalizedFrames;
-		},{
-			sourceFrames = frames;
-		});
 		outFrames = sourceFrames.collect({
 			arg frame;
 			var outVec = defVec.collect({
@@ -565,47 +474,30 @@ MIRAnalysis {
 		^filesList;
 	}
 
-	*analyzeFolderNRT {
-		arg folderPath, action, recursive = false, featureSmoothingLagOnServer = 0, finishedAction, trackingDict;
-		var pn;
-		var files = List.new;
-
-		pn = PathName(folderPath);
-
-		if(recursive,{
-			files = this.addFiles_r(files,pn);
-		},{
-			files = pn.files;
-		});
-
-		files = files.select({
-			arg fi;
-			(fi.extension == "wav") ||
-			(fi.extension == "aif") ||
-			(fi.extension == "aiff")
-		});
-
-		if(trackingDict.isNil,{
-			trackingDict = Dictionary.new;
-		});
+	*analyzeFilesArrayNRT {
+		arg files, action, grain_dur, featureSmoothingLagOnServer = 0, finishedAction;
+		var trackingDict = Dictionary.new;
 
 		files.do({
-			arg pnfile;
+			arg path;
 			this.analyzeFileNRT(
-				pnfile.fullPath,
+				path,
 				action,
 				featureSmoothingLagOnServer,
 				finishedAction,
-				trackingDict
+				trackingDict,
+				grain_dur:grain_dur
 			);
 		});
 	}
 
 	*analyzeFileNRT {
-		arg filePath, action,featureSmoothingLagOnServer = 0, finishedAction, trackingDict, onsetThresh = 0.9, onsetRelaxTime = 0.1, trigRate = 30;
+		arg filePath, action,featureSmoothingLagOnServer = 0, finishedAction, trackingDict, onsetThresh = 0.9, onsetRelaxTime = 0.1, grain_dur = 0.05;
 		var analysisfilename,analysisfilename2,analysisfilename3, ext;
+		var trigRate = grain_dur.reciprocal;
 
 		ext = PathName(filePath).extension;
+
 		if((ext == "wav") || (ext == "aiff") || (ext == "aif"),{
 			//PathName(filePath).fileNameWithoutExtension.postln;
 			if(trackingDict.notNil,{
@@ -615,6 +507,7 @@ MIRAnalysis {
 			analysisfilename = "/tmp/%_nrt_analysis_buf_%.wav".format(Date.localtime.stamp,UniqueID.next);
 			analysisfilename2 = "/tmp/%_nrt_analysis_buf_%.wav".format(Date.localtime.stamp,UniqueID.next);
 			analysisfilename3 = "/tmp/%_nrt_analysis_buf_%.wav".format(Date.localtime.stamp,UniqueID.next);
+
 			SoundFile.use(filePath,{
 				arg sf;
 				var fileDur,nChans,oscActions;
@@ -623,23 +516,21 @@ MIRAnalysis {
 				//fftDur = fftSize / sf.sampleRate;
 
 				oscActions = [
-					[0.0,[\b_alloc,0,fileDur / trigRate.reciprocal,buf1size]], // bufnum, frames, chans (+1 is for the onsets channel, which gets stripped off afterwards)
-					[0.0,[\b_alloc,2,fileDur / trigRate.reciprocal,buf2size]],
-					[0.0,[\b_alloc,3,fileDur / trigRate.reciprocal,buf3size]],
-					[0.0,[\b_allocRead,1,filePath]],
-					// wait a little time
+					[0.0,[\b_allocRead,0,filePath]],
+					[0.0,[\b_alloc,1,fileDur / grain_dur,buf1size]], // bufnum, frames, chans (+1 is for the onsets channel, which gets stripped off afterwards)
+					[0.0,[\b_alloc,2,fileDur / grain_dur,buf2size]],
+					[0.0,[\b_alloc,3,fileDur / grain_dur,buf3size]],
 					[0,[\s_new, \mirNrt++nChans.asSymbol, 1000, 0, 0, // name, id, addAction, addTarget
-						\soundBuf,1, // start args
-						\dataBuf,0,
+						\soundBuf,0, // start args
+						\dataBuf,1,
 						\dataBuf2,2,
 						\dataBuf3,3,
-						//\fftDur,fftDur,
 						\lag,featureSmoothingLagOnServer,
 						\onsetThresh,onsetThresh,
 						\onsetRelaxTime,onsetRelaxTime,
 						\trigRate,trigRate
 					]],
-					[fileDur,[\b_write,0,analysisfilename, "WAV", "float"]],
+					[fileDur,[\b_write,1,analysisfilename, "WAV", "float"]],
 					[fileDur,[\b_write,2,analysisfilename2, "WAV", "float"]],
 					[fileDur,[\b_write,3,analysisfilename3, "WAV", "float"]],
 					[fileDur,[\c_set, 0, 0]]
@@ -651,6 +542,7 @@ MIRAnalysis {
 					options:ServerOptions.new.numOutputBusChannels_(1),
 					action:{
 						var buf;
+						//[analysisfilename,analysisfilename2,analysisfilename3].postln;
 						SoundFile.use(analysisfilename,{
 							arg sf;
 							var array, /*data = (),*/ dispersionData = [], onsetVector;
@@ -679,6 +571,8 @@ MIRAnalysis {
 
 									array3 = array3.clump(buf3size);
 
+									//"array 3 shape: %".format(array3).shape;
+
 									array = array.collect({
 										arg frame, index;
 										var time;//, nDispersionFrames;//, disp;
@@ -697,12 +591,11 @@ MIRAnalysis {
 									action.value(MIRAnalysisFile(
 										array,
 										fftSize,
-										trigRate.reciprocal,
+										grain_dur,
 										filePath,
-										nil,
-										nil,//dispersionData,
 										onsetVector,
-										fileDur
+										fileDur,
+										nChans
 									));
 
 									if(trackingDict.notNil,{

@@ -49,6 +49,9 @@ ArrayToCSV {
 
 		data.do({
 			arg entry, i;
+
+			if(entry.isSequenceableCollection.not.or(entry.isString),{entry = [entry]});
+
 			if(i != 0,{file.write("\n");});
 			entry.do({
 				arg val, j;
