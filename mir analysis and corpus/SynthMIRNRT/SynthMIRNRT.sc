@@ -25,67 +25,32 @@ SynthMIRNRT {
 		StartUp.defer{
 			SynthDef(\analysis_log_nrt,{
 				arg audioInBus, analysis_buf, t_logger = 0;
-
 				var sig = In.ar(audioInBus);
-
-				// analysis
 				var fft = FFT(LocalBuf(2048),sig);
 				var mfcc = FluidMFCC.kr(sig,40);
 				var spec = FluidSpectralShape.kr(sig);
 				var pitch = FluidPitch.kr(sig);
 				var loudness = FluidLoudness.kr(sig);
-				//var chroma = Chromagram.kr(fft);
 				var vector = mfcc ++ spec ++ pitch ++ /*chroma ++*/ loudness ++ [
 					A2K.kr(ZeroCrossing.ar(sig)),
 					SensoryDissonance.kr(fft)
 				];
-
-				// INDICES (you have to add the number of input params to get the right csv index offset):
-				// mfccs 00-39
-				// spec  40-46
-				// pitch 47-48
-				// loudness 49-50
-				// zeroc 51
-				// sensdis 52
-				// mels 53-92
-				// chroma 93-104
-
-				//vector = vector.flatten;
-				//sig.poll(label:"sig");
-
-				//vector = Median.kr(31,vector);
-				//vector.poll(1,"vector");
-				//Trig1.kr(t_logger,0.4).poll(10,"t logger");
 				Logger.kr(vector,t_logger,analysis_buf);
 				Out.ar(0,sig);
 			}).writeDefFile;
 
 			SynthDef(\analysis_log_nrt_melbands,{
 				arg audioInBus, analysis_buf, t_logger = 0;
-
 				var sig = In.ar(audioInBus);
-
-				// analysis
 				var melBands = FluidMelBands.kr(sig,40,maxNumBands:40);
-
-				//melBands = Median.kr(31,melBands);
-				//vector.poll(1,"vector");
-				//Trig1.kr(t_logger,0.4).poll(10,"t logger");
 				Logger.kr(melBands,t_logger,analysis_buf);
 				Out.ar(0,sig);
 			}).writeDefFile;
 
 			SynthDef(\analysis_log_nrt_chroma,{
 				arg audioInBus, analysis_buf, t_logger = 0;
-
 				var sig = In.ar(audioInBus);
-
-				// analysis
 				var chroma = Chromagram.kr(FFT(LocalBuf(2048),sig),2048);
-
-				//chroma = Median.kr(31,chroma);
-				//vector.poll(1,"vector");
-				//Trig1.kr(t_logger,0.4).poll(10,"t logger");
 				Logger.kr(chroma,t_logger,analysis_buf);
 				Out.ar(0,sig);
 			}).writeDefFile;
@@ -258,7 +223,7 @@ SynthMIRNRT {
 
 		//osc_actions.dopostln;
 
-		"out file path: %".format(out_file_path).postln;
+		// "out file path: %".format(out_file_path).postln;
 		Score.recordNRT(
 			osc_actions,
 			outputFilePath:out_file_path,
@@ -273,30 +238,10 @@ SynthMIRNRT {
 
 					array_to_csv = ArrayToCSV.open(save_path);
 
-					/*					sf.postln;
-					sf.numFrames.postln;
-					sf.numChannels.postln;
-					Buffer.readChannel(Server.default,sf.path,channels:[0,1,2],action:{
-					arg buf;
-					defer{buf.plot};
-					});*/
-
-					//"n frames: %".format(n_frames).postln;
-
-					//osc_actions.dopostln;
-
 					array = FloatArray.newClear(sf.numFrames * sf.numChannels);
 
-					//"array1: %, %".format(array.size,array).postln;
-
 					sf.readData(array);
-
-					//"array2: %, %".format(array.size,array).postln;
-
-					//"n features: %".format(n_features).postln;
 					array = array.clump(n_features);
-
-					//"array3: %, %".format(array.size,array).postln;
 
 					SoundFile.use(analysisfilename_melbands,{
 						arg sf_mb;
@@ -319,11 +264,6 @@ SynthMIRNRT {
 								arg param_array;
 								param_array[0].asString;
 							}));
-
-							/*var vector = mfcc ++ spec ++ pitch ++ /*chroma ++*/ loudness ++ [
-							A2K.kr(ZeroCrossing.ar(sig)),
-							SensoryDissonance.kr(fft)
-							];*/
 
 							labels_array.addAll(40.collect({
 								arg i_;
@@ -361,7 +301,7 @@ SynthMIRNRT {
 							array.do({
 								arg frame, index;
 								var line = input_pts[index] ++ frame ++ array_mb[index] ++ array_ch[index];
-/*								index.postln;
+								/*								index.postln;
 								line.postln;
 								line.size.postln;
 								"".postln;*/
@@ -371,9 +311,16 @@ SynthMIRNRT {
 
 							array_to_csv.close;
 
-							//analysisfilename.postln;
+							// INDICES (you have to add the number of input params to get the right csv index offset):
+							// mfccs 00-39
+							// spec  40-46
+							// pitch 47-48
+							// loudness 49-50
+							// zeroc 51
+							// sensdis 52
+							// mels 53-92
+							// chroma 93-104
 
-							//osc_actions.dopostln;
 							action.value;
 						});
 					});
