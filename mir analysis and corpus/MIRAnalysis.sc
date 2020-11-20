@@ -134,50 +134,51 @@ MIRAnalysis {
 
 	*featureOrder {
 		^[
-			\specCent,
-			\specSpread,
-			\specSkewness,
-			\specKurtosis,
-			\specRolloff,
-			\specFlatness,
-			\specCrest,
-			\pitch,
-			\pitchConfidence,
-			\loudness,
-			\truePeak,
-			\senseDis,
-			\zeroCrossing,
-			\mfcc00,
-			\mfcc01,
-			\mfcc02,
-			\mfcc03,
-			\mfcc04,
-			\mfcc05,
-			\mfcc06,
-			\mfcc07,
-			\mfcc08,
-			\mfcc09,
-			\mfcc10,
-			\mfcc11,
-			\mfcc12,
-			\mfcc13,
-			\mfcc14,
-			\mfcc15,
-			\mfcc16,
-			\mfcc17,
-			\mfcc18,
-			\mfcc19,
-			\mfcc20,
-			\mfcc21,
-			\mfcc22,
-			\mfcc23,
-			\mfcc24,
-			\mfcc25,
-			\mfcc26,
-			\mfcc27,
-			\mfcc28,
-			\mfcc29,
-			\mfcc30,
+			\specCent,// 0
+			\specSpread,// 1
+			\specSkewness,// 2
+			\specKurtosis,// 3
+			\specRolloff,// 4
+			\specFlatness,// 5
+			\specCrest,// 6
+			\pitch,// 7
+			\pitchConfidence,// 8
+			\loudness,// 9
+			\truePeak,// 10
+			\amplitude,// 11
+			\senseDis,// 12
+			\zeroCrossing,// 13
+			\mfcc00,// 14
+			\mfcc01,// 14
+			\mfcc02,// 14
+			\mfcc03,// 14
+			\mfcc04,// 14
+			\mfcc05,// 14
+			\mfcc06,// 14
+			\mfcc07,// 14
+			\mfcc08,// 14
+			\mfcc09,// 14
+			\mfcc10,// 14
+			\mfcc11,// 14
+			\mfcc12,// 14
+			\mfcc13,// 14
+			\mfcc14,// 14
+			\mfcc15,// 14
+			\mfcc16,// 14
+			\mfcc17,// 14
+			\mfcc18,// 14
+			\mfcc19,// 14
+			\mfcc20,// 14
+			\mfcc21,// 14
+			\mfcc22,// 14
+			\mfcc23,// 14
+			\mfcc24,// 14
+			\mfcc25,// 14
+			\mfcc26,// 14
+			\mfcc27,// 14
+			\mfcc28,// 14
+			\mfcc29,// 14
+			\mfcc30,// 14
 			\mfcc31,
 			\mfcc32,
 			\mfcc33,
@@ -186,7 +187,7 @@ MIRAnalysis {
 			\mfcc36,
 			\mfcc37,
 			\mfcc38,
-			\mfcc39,
+			\mfcc39,// 53
 			\chromagram00,
 			\chromagram01,
 			\chromagram02,
@@ -268,6 +269,7 @@ MIRAnalysis {
 					FluidPitch.kr(sig) ++
 					FluidLoudness.kr(sig) ++
 					[
+						Amplitude.kr(sig),
 						SensoryDissonance.kr(fft),
 						A2K.kr(ZeroCrossing.ar(sig))
 					]; // 13

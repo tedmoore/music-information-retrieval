@@ -41,14 +41,14 @@ SynthMIRNRT {
 				];
 
 				// INDICES (you have to add the number of input params to get the right csv index offset):
-				// mfccs 00-38
-				// spec  39-45
-				// pitch 46-47
-				// mels  48-87
-				// zeroc 88
-				// loudn 89-90
-				// sensdis 91
-				// chroma  92-103
+				// mfccs 00-39
+				// spec  40-46
+				// pitch 47-48
+				// loudness 49-50
+				// zeroc 51
+				// sensdis 52
+				// mels 53-92
+				// chroma 93-104
 
 				//vector = vector.flatten;
 				//sig.poll(label:"sig");
@@ -94,7 +94,7 @@ SynthMIRNRT {
 
 	create_inputs_from_csv {
 		arg path, verbose;
-		var csv = CSVFileReader.readInterpret(path,true,true);
+		var csv = CSVFileReader.readInterpret(path,true,true); // these should be normalized because it will use the scalars you passed to scale them!!!!!!!!
 
 		input_msgs = List.new;
 		input_pts = List.new;
