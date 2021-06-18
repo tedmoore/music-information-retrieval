@@ -5,64 +5,73 @@ SynthMIRNRT {
 	var pre_wait, post_wait;
 	var input_msgs;
 	var input_pts;
-	var n_steps;
 	var synthDef_to_analyze;
 	var osc_actions;
 	var save_path;
-	var n_features = 53;
+	var n_features = 53; // in first synth!
 	var array_to_csv;
 	var analysisfilename;
 	var n_frames;
 	var analysisfilename_melbands;
 	var analysisfilename_chroma;
+	var numChans;
+	var labels_array;
+	var n_active_params;
 
 	*new {
-		arg params_, save_path_, synthDef_to_analyze, n_steps_or_file = 10,pre_wait_ = 0.1,post_wait_ = 0.1,  audio_path = nil, action = nil, verbose = false;
-		^super.new.init(params_, save_path_, synthDef_to_analyze, n_steps_or_file,pre_wait_,post_wait_, audio_path, action, verbose);
+		arg params_, save_path_, synthDef_to_analyze,pre_wait_ = 0.1,post_wait_ = 0.1,  audio_path = nil, action = nil, verbose = false, numChans_ = 1, csv_data_points = nil;
+		^super.new.init(params_, save_path_, synthDef_to_analyze,pre_wait_,post_wait_, audio_path, action, verbose, numChans_, csv_data_points);
 	}
 
-	*initClass {
-		StartUp.defer{
-			SynthDef(\analysis_log_nrt,{
-				arg audioInBus, analysis_buf, t_logger = 0;
-				var sig = In.ar(audioInBus);
-				var fft = FFT(LocalBuf(2048),sig);
-				var mfcc = FluidMFCC.kr(sig,40);
-				var spec = FluidSpectralShape.kr(sig);
-				var pitch = FluidPitch.kr(sig);
-				var loudness = FluidLoudness.kr(sig);
-				var vector = mfcc ++ spec ++ pitch ++ /*chroma ++*/ loudness ++ [
-					A2K.kr(ZeroCrossing.ar(sig)),
-					SensoryDissonance.kr(fft)
-				];
-				Logger.kr(vector,t_logger,analysis_buf);
-				Out.ar(0,sig);
-			}).writeDefFile;
+	makeSynthDefs {
+		arg numChans;
+		SynthDef(\analysis_log_nrt,{
+			arg audioInBus, analysis_buf, t_logger = 0;
+			var ogsig = In.ar(audioInBus,numChans);
+			var sig = Mix(ogsig) * numChans.reciprocal;
+			var fft = FFT(LocalBuf(1024),sig);
+			var mfcc = FluidMFCC.kr(sig,40);
+			var spec = FluidSpectralShape.kr(sig);
+			var pitch = FluidPitch.kr(sig);
+			var loudness = FluidLoudness.kr(sig);
+			var vector = mfcc ++ spec ++ pitch ++ /*chroma ++*/ loudness ++ [
+				A2K.kr(ZeroCrossing.ar(sig)),
+				SensoryDissonance.kr(fft)
+			];
+			Logger.kr(vector,t_logger,analysis_buf);
+			Out.ar(0,ogsig);
+		}).writeDefFile;
 
-			SynthDef(\analysis_log_nrt_melbands,{
-				arg audioInBus, analysis_buf, t_logger = 0;
-				var sig = In.ar(audioInBus);
-				var melBands = FluidMelBands.kr(sig,40,maxNumBands:40);
-				Logger.kr(melBands,t_logger,analysis_buf);
-				Out.ar(0,sig);
-			}).writeDefFile;
+		SynthDef(\analysis_log_nrt_melbands,{
+			arg audioInBus, analysis_buf, t_logger = 0;
+			var sig = Mix(In.ar(audioInBus,numChans)) * numChans.reciprocal;
+			var melBands = FluidMelBands.kr(sig,40,maxNumBands:40);
+			Logger.kr(melBands,t_logger,analysis_buf);
+			//Out.ar(0,sig);
+		}).writeDefFile;
 
-			SynthDef(\analysis_log_nrt_chroma,{
-				arg audioInBus, analysis_buf, t_logger = 0;
-				var sig = In.ar(audioInBus);
-				var chroma = Chromagram.kr(FFT(LocalBuf(2048),sig),2048);
-				Logger.kr(chroma,t_logger,analysis_buf);
-				Out.ar(0,sig);
-			}).writeDefFile;
-		}
+		SynthDef(\analysis_log_nrt_chroma,{
+			arg audioInBus, analysis_buf, t_logger = 0;
+			var sig = Mix(In.ar(audioInBus,numChans)) * numChans.reciprocal;
+			var chroma = Chromagram.kr(FFT(LocalBuf(1024),sig),1024);
+			Logger.kr(chroma,t_logger,analysis_buf);
+			//Out.ar(0,sig);
+		}).writeDefFile;
 	}
 
 	create_inputs_from_csv {
 		arg path, verbose;
 		var csv = CSVFileReader.readInterpret(path,true,true); // these should be normalized because it will use the scalars you passed to scale them!!!!!!!!
 
+		if(n_active_params != csv[0].size,{
+			"Number of active params is not equal to the number of dimensions in the csv file.".error;
+		});
+
+		n_frames = csv.size;
+
 		input_msgs = List.new;
 		input_pts = List.new;
+
 		/*
 		csv.postln;
 		csv.shape.postln;*/
@@ -71,13 +80,24 @@ SynthMIRNRT {
 			arg input_pt;
 			var sub_array = List.new;
 			var input_pt_sub_array = List.new;
+			var input_idx = 0;
 
 			sub_array.addAll([\n_set,1001]);
 
-			input_pt.do({
-				arg normed_val, i;
-				var val = params[i][1].map(normed_val);
-				sub_array.addAll([params[i][0]/*name*/,val]);
+			params.do({
+				arg param, i;
+				var name = param[0];
+				var val;
+
+				if(param[1].isKindOf(ControlSpec),{
+					var normed_val = input_pt[input_idx];
+					val = param[1].map(normed_val);
+					input_idx = input_idx + 1;
+				},{
+					val = param[1];
+				});
+
+				sub_array.addAll([name,val]);
 				input_pt_sub_array.add(val);
 			});
 
@@ -102,31 +122,113 @@ SynthMIRNRT {
 	}*/
 
 	init {
-		arg params_, save_path_, synthDef_to_analyze, n_steps_or_file_ = 10,pre_wait_ = 0.1,post_wait_ = 0.1, audio_path_ = nil, action = nil, verbose = false;
-
+		arg params_, save_path_, synthDef_to_analyze,pre_wait_ = 0.1,post_wait_ = 0.1, audio_path_ = nil, action = nil, verbose = false, numChans_ = 1, csv_data_points = nil;
+		var log = ArrayToCSV.open(save_path_+/+"log.csv");
+		var synthDef_to_analyze_name;
 		//n_features = 40;//88;//92;//104;
 
 		params = params_;
-		n_steps = n_steps_or_file_;
 		pre_wait = pre_wait_;
 		post_wait = post_wait_;
 		save_path = save_path_;
+		numChans = numChans_;
 
-		synthDef_to_analyze.writeDefFile;
+		this.makeSynthDefs(numChans);
 
-		time_counter = 3;
+		if(synthDef_to_analyze.isSymbolWS,{
+			synthDef_to_analyze_name = synthDef_to_analyze;
+		},{
+			synthDef_to_analyze.writeDefFile;
+			synthDef_to_analyze_name = synthDef_to_analyze.name;
+		});
+
+		time_counter = 0.0;
 		analysisfilename = "/tmp/%_nrt_analysis_buf_%.wav".format(Date.localtime.stamp,UniqueID.next);
 		analysisfilename_melbands = "/tmp/%_nrt_analysis_buf_melbands_%.wav".format(Date.localtime.stamp,UniqueID.next);
 		analysisfilename_chroma = "/tmp/%_nrt_analysis_buf_chroma_%.wav".format(Date.localtime.stamp,UniqueID.next);
 
-		if(n_steps.isString,{
-			n_frames = this.create_inputs_from_csv(n_steps,verbose);
-		},{
-			n_frames = n_steps.pow(params.size);
+		log.writeLine(["SynthDef name: %".format(synthDef_to_analyze_name.asString)]);
+		log.writeLine(["pre_wait",pre_wait]);
+		log.writeLine(["post_wait",post_wait]);
+		log.writeLine(["save_path",save_path]);
+		log.writeLine(["audio_path",audio_path_]);
+
+		n_active_params = params.select({arg param; param[1].isKindOf(ControlSpec)}).size;
+
+		if(csv_data_points.isNil,{
+			log.writeLine(["name","min","max","warp","step","n_steps_for_analysis"]);
+			n_frames = 1;
+			params.do({
+				arg param;
+				var is_active = param[1].isKindOf(ControlSpec);
+				if(is_active,{
+					n_frames = n_frames * param[2];
+					log.writeLine([param[0],param[1].minval,param[1].maxval,param[1].warp.class.asString,param[1].step,param[2]]);
+				},{
+					log.writeLine([param[0],param[1]]);
+				});
+			});
 			this.create_input_msgs(verbose);
+		},{
+			log.writeLine(["params taken from csv file:",csv_data_points]);
+			log.writeLine(["name","min","max","warp","step"]);
+			params.do({
+				arg param;
+				var is_active = param[1].isKindOf(ControlSpec);
+				if(is_active,{
+					log.writeLine([param[0],param[1].minval,param[1].maxval,param[1].warp.class.asString,param[1].step]);
+				},{
+					log.writeLine([param[0],param[1]]);
+				});
+			});
+			this.create_inputs_from_csv(csv_data_points,verbose);
 		});
 
-		//"n frames: %".format(n_frames).postln;
+		labels_array = List.new;
+		labels_array.addAll(params.collect({
+			arg param_array;
+			// "param array: %".format(param_array).postln;
+			param_array[0].asString;
+		}));
+
+		labels_array.addAll(40.collect({
+			arg i_;
+			"mfcc%".format(i_.asString.padLeft(2,"0"));
+		}));
+
+		labels_array.addAll([
+			"spec_centroid",
+			"spec_spread",
+			"spec_skewness",
+			"spec_kurtosis",
+			"spec_rolloff",
+			"spec_flatness",
+			"spec_crest",
+			"pitch",
+			"pitch_confidence",
+			"loudness",
+			"loudness_truepeak",
+			"zero_crossing",
+			"sensory_dissonance"
+		]);
+
+		labels_array.addAll(40.collect({
+			arg i_;
+			"melband%".format(i_.asString.padLeft(2,"0"));
+		}));
+
+		labels_array.addAll(12.collect({
+			arg i_;
+			"chromagram%".format(i_.asString.padLeft(2,"0"));
+		}));
+
+		log.writeLine(["labels of columns:"]);
+		labels_array.do({
+			arg label, i;
+			log.writeLine([i,label]);
+		});
+
+		log.close;
 
 		osc_actions = [
 			[0.0,[\b_alloc,0,n_frames.asInteger,n_features.asInteger]],
@@ -144,22 +246,19 @@ SynthMIRNRT {
 				\audioInBus,11, // start args
 				\analysis_buf,2
 			]],
-			[0.0,[\s_new,synthDef_to_analyze.name.asSymbol,1001,0,0,
+			[0.0,[\s_new,synthDef_to_analyze_name,1001,0,0,
 				\outBus,11
 			]],
 		];
 
-		//"class: %".format(osc_actions.class).postln;
-		//time_counter = 3;
+		osc_actions = osc_actions ++ input_msgs; // insert them all
 
-		osc_actions = osc_actions ++ input_msgs;
-
-		time_counter = time_counter + 1;
+		//time_counter = time_counter + 1; // i dont think i need this, i'm trying to remove extraneous time so that i can analyze the file...
 		osc_actions = osc_actions ++ [
 			[time_counter,[\b_write,0,analysisfilename, "WAV", "float"]],
 			[time_counter,[\b_write,1,analysisfilename_melbands, "WAV", "float"]],
 			[time_counter,[\b_write,2,analysisfilename_chroma, "WAV", "float"]],
-			[time_counter + 1,[\c_set, 0, 0]]
+			[time_counter,[\c_set, 0, 0]]
 		];
 
 		//osc_actions.dopostln;
@@ -172,22 +271,27 @@ SynthMIRNRT {
 		arg verbose;
 		input_msgs = List.new;
 		input_pts = List.new;
-		this.create_input_msgs_r(params,0,nil,n_steps, verbose);
+		this.create_input_msgs_r(params,0,nil, verbose);
 	}
 
 	create_input_msgs_r {
-		arg params_, layer = 0, current_frame = nil, n_steps_ = 3, verbose;
+		arg params_, layer = 0, current_frame = nil, verbose;
+
+		/*		"create input msg r:".postln;
+		layer.postln;
+		current_frame.postln;
+		"".postln;*/
 
 		if(layer < params_.size,{
-			n_steps_.do({
+			params_[layer][2].do({
 				arg i;
-				var i_n = params_[layer][1].map(i.linlin(0,n_steps_-1,0,1));
+				var i_n = params_[layer][1].map(i.linlin(0,params_[layer][2]-1,0,1));
 
 				if(current_frame.isNil,{
 					current_frame = Array.newClear(params_.size);
 				});
 				current_frame[layer] = i_n;
-				this.create_input_msgs_r(params_,layer + 1, current_frame.copy, n_steps_, verbose);
+				this.create_input_msgs_r(params_,layer + 1, current_frame.copy, verbose);
 			});
 		},{
 			var sub_array = List.new;
@@ -209,7 +313,7 @@ SynthMIRNRT {
 
 			input_pts.add(current_frame);
 
-			if(verbose,{sub_array.postln});
+			if(verbose,{"sub array: %".format(sub_array).postln});
 		});
 	}
 
@@ -224,11 +328,13 @@ SynthMIRNRT {
 		//osc_actions.dopostln;
 
 		// "out file path: %".format(out_file_path).postln;
+
+		// "params before nrt: %".format(params).postln;
 		Score.recordNRT(
 			osc_actions,
 			outputFilePath:out_file_path,
 			//headerFormat:"wav",
-			options:ServerOptions.new.numOutputBusChannels_(1),
+			options:ServerOptions.new.numOutputBusChannels_(numChans),
 			//duration:time_counter + 2,
 			action:{
 				//analysisfilename.postln;
@@ -236,12 +342,14 @@ SynthMIRNRT {
 					arg sf;
 					var array;
 
-					array_to_csv = ArrayToCSV.open(save_path);
+					array_to_csv = ArrayToCSV.open(save_path+/+"analysis.csv");
 
 					array = FloatArray.newClear(sf.numFrames * sf.numChannels);
 
 					sf.readData(array);
 					array = array.clump(n_features);
+
+					// "first sf done".postln;
 
 					SoundFile.use(analysisfilename_melbands,{
 						arg sf_mb;
@@ -250,57 +358,30 @@ SynthMIRNRT {
 						sf_mb.readData(array_mb);
 						array_mb = array_mb.clump(40); // n mel bands;
 
+						// "second sf done".postln;
+
 						SoundFile.use(analysisfilename_chroma,{
 							arg sf_ch;
 
 							var array_ch = FloatArray.newClear(sf_ch.numFrames * sf_ch.numChannels);
-							var labels_array = List.new;
 
 							sf_ch.readData(array_ch);
-							array_ch = array_ch.clump(12); // n mel bands;
+							array_ch = array_ch.clump(12); // chroma
 
 							// input points
-							labels_array.addAll(params.collect({
-								arg param_array;
-								param_array[0].asString;
-							}));
-
-							labels_array.addAll(40.collect({
-								arg i_;
-								"mfcc%".format(i_.asString.padLeft(2,"0"));
-							}));
-
-							labels_array.addAll([
-								"spec_centroid",
-								"spec_spread",
-								"spec_skewness",
-								"spec_kurtosis",
-								"spec_rolloff",
-								"spec_flatness",
-								"spec_crest",
-								"pitch",
-								"pitch_confidence",
-								"loudness",
-								"loudness_truepeak",
-								"zero_crossing",
-								"sensory_dissonance"
-							]);
-
-							labels_array.addAll(40.collect({
-								arg i_;
-								"melband%".format(i_.asString.padLeft(2,"0"));
-							}));
-
-							labels_array.addAll(12.collect({
-								arg i_;
-								"chromagram%".format(i_.asString.padLeft(2,"0"));
-							}));
+							// "params: %".format(params).postln;
 
 							array_to_csv.writeLine(labels_array);
 
+							/*							"array: %".format(array).postln;
+							"input points: %".format(input_pts).postln;
+							//"frame: %".format(frame).postln;
+							"array_mb: %".format(array_mb).postln;
+							"array_ch: %".format(array_ch).postln;*/
 							array.do({
 								arg frame, index;
 								var line = input_pts[index] ++ frame ++ array_mb[index] ++ array_ch[index];
+
 								/*								index.postln;
 								line.postln;
 								line.size.postln;

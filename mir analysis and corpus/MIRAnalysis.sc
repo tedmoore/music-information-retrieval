@@ -117,10 +117,10 @@ MIRAnalysisLiveFrame {
 
 MIRAnalysis {
 	classvar <fftSize = 2048, <>maxNChans = 8, <>maxHistory = 6;
-	classvar buf1size = 14;
+	classvar buf1size = 15; // 15 for onset thingy
 	classvar buf2size = 52;
 	classvar buf3size = 40;
-	var <liveInBus, nChans = 1, synth, <>maxHistory = 6, replyID,action, normalizedRanges, normalizedRangesForSynth, playing, vectorHistory, currentData, <trigRate, maxHistory_seconds = 1;
+	var <liveInBus, nChans = 1, <synth, <>maxHistory = 6, replyID,action, normalizedRanges, normalizedRangesForSynth, playing, vectorHistory, currentData, <trigRate, maxHistory_seconds = 1;
 
 	*initClass {
 		StartUp.defer {
@@ -188,7 +188,7 @@ MIRAnalysis {
 			\mfcc37,
 			\mfcc38,
 			\mfcc39,// 53
-			\chromagram00,
+			\chromagram00, //54
 			\chromagram01,
 			\chromagram02,
 			\chromagram03,
@@ -199,8 +199,8 @@ MIRAnalysis {
 			\chromagram08,
 			\chromagram09,
 			\chromagram10,
-			\chromagram11,
-			\melband00,
+			\chromagram11,//65
+			\melband00,//66
 			\melband01,
 			\melband02,
 			\melband03,
@@ -250,7 +250,7 @@ MIRAnalysis {
 			(1..maxChans).do({
 				arg nChans;
 				SynthDef(\mir++mode.asSymbol++nChans.asSymbol,{
-					arg soundBuf, dataBuf, dataBuf2, dataBuf3, trigRate = 30, inBus, replyID,onsetThresh = 0.9,onsetRelaxTime = 0.1, autoRange = 0, lag = 0;
+					arg soundBuf, dataBuf, dataBuf2, dataBuf3, trigRate = 30, inBus, replyID,onsetThresh = 0.9,onsetRelaxTime = 0.1, autoRange = 0, lag = 0, outBus;
 					var sig,fft,trig,specCent,features, normedFeatures, norms, onsetTrigs, mfcc_chroma, melbands;
 
 					if(mode == \Nrt,{
@@ -272,16 +272,15 @@ MIRAnalysis {
 						Amplitude.kr(sig),
 						SensoryDissonance.kr(fft),
 						A2K.kr(ZeroCrossing.ar(sig))
-					]; // 13
+					]; // 14
 
-					mfcc_chroma = FluidMFCC.kr(sig,40) ++
-					Chromagram.kr(fft,fftSize);
+					mfcc_chroma = FluidMFCC.kr(sig,40) ++ Chromagram.kr(fft,fftSize);
 
 					melbands = FluidMelBands.kr(sig,40,maxNumBands:40);
 
 					features = Sanitize.kr(features);
 
-					//features = Median.kr(15,features); // about 25 ms
+					features = Median.kr(31,features);
 
 					onsetTrigs = Onsets.kr(fft,onsetThresh,relaxtime:onsetRelaxTime);
 
@@ -293,6 +292,8 @@ MIRAnalysis {
 						Logger.kr(melbands,trig,dataBuf3);
 					},{
 						features = features ++ mfcc_chroma ++ melbands;
+
+						Out.kr(outBus,features);
 
 						features = features.lag(lag);
 
@@ -310,8 +311,8 @@ MIRAnalysis {
 	}
 
 	*live {
-		arg audioInBus,target,addAction,normalizedRanges,nChans = 1,onsetThresh = 1.0, onsetRelaxTime = 0.2,autoRange,lag,action,liveTrigRate = 30;
-		^super.new.init(audioInBus,target,addAction,normalizedRanges,nChans,onsetThresh,onsetRelaxTime,autoRange,lag,action,liveTrigRate);
+		arg audioInBus,target,addAction,normalizedRanges,nChans = 1,onsetThresh = 1.0, onsetRelaxTime = 0.2,autoRange,lag,action,liveTrigRate = 30,outBus;
+		^super.new.init(audioInBus,target,addAction,normalizedRanges,nChans,onsetThresh,onsetRelaxTime,autoRange,lag,action,liveTrigRate,outBus);
 	}
 
 	autoRange_ {
@@ -344,7 +345,7 @@ MIRAnalysis {
 	}
 
 	init {
-		arg liveInBus_, target_,addAction_,normalizedRanges_,nChans_ = 1, onsetThresh, onsetRelaxTime, autoRange_, lag_, action_, trigRate_ = 30;
+		arg liveInBus_, target_,addAction_,normalizedRanges_,nChans_ = 1, onsetThresh, onsetRelaxTime, autoRange_, lag_, action_, trigRate_ = 30, outBus;
 		liveInBus = liveInBus_;
 		nChans = nChans_;
 		replyID = UniqueID.next;
@@ -369,7 +370,8 @@ MIRAnalysis {
 			\norms,normalizedRangesForSynth,
 			\autoRange,autoRange_,
 			\trigRate,trigRate,
-			\lag,lag_
+			\lag,lag_,
+			\outBus,outBus
 		],target_,addAction_);
 
 		if(playing.not,{synth.run(false)});
@@ -430,7 +432,6 @@ MIRAnalysis {
 				action.value("onset");
 			});
 		},"/mirLiveOnset");
-
 		^this;
 	}
 
@@ -519,7 +520,7 @@ MIRAnalysis {
 
 				oscActions = [
 					[0.0,[\b_allocRead,0,filePath]],
-					[0.0,[\b_alloc,1,fileDur / grain_dur,buf1size]], // bufnum, frames, chans (+1 is for the onsets channel, which gets stripped off afterwards)
+					[0.0,[\b_alloc,1,fileDur / grain_dur,buf1size]],
 					[0.0,[\b_alloc,2,fileDur / grain_dur,buf2size]],
 					[0.0,[\b_alloc,3,fileDur / grain_dur,buf3size]],
 					[0,[\s_new, \mirNrt++nChans.asSymbol, 1000, 0, 0, // name, id, addAction, addTarget
@@ -547,15 +548,13 @@ MIRAnalysis {
 						//[analysisfilename,analysisfilename2,analysisfilename3].postln;
 						SoundFile.use(analysisfilename,{
 							arg sf;
-							var array, /*data = (),*/ dispersionData = [], onsetVector;
+							var array, dispersionData = [], onsetVector;
 							array = FloatArray.newClear(sf.numFrames * sf.numChannels);
 							sf.readData(array);
-							array = array.clump(buf1size); // + 1 for onsets channel
-							//"array size: %".format(array.size).postln;
+							array = array.clump(buf1size);
 
 							// strip off onsets
 							onsetVector = array.flop.last;
-							//"onset vector: %".format(onsetVector).postln;
 
 							SoundFile.use(analysisfilename2,{
 								arg sf_2;
